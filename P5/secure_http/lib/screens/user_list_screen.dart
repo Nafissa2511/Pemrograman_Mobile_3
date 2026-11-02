@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
-import '../models/user.dart';
 import '../services/api_service.dart';
-import '../widgets/user_card.dart';
 
 class UserListScreen extends StatefulWidget {
   const UserListScreen({super.key});
@@ -12,169 +10,177 @@ class UserListScreen extends StatefulWidget {
 
 class _UserListScreenState extends State<UserListScreen> {
   final ApiService _apiService = ApiService();
+  
+  // Controller & Query untuk Latihan 4 (Pencarian)
+  final TextEditingController _searchController = TextEditingController();
+  String _query = '';
 
-  List<User> _users = [];
-  bool _isLoading = true;
-  String? _errorMessage;
- 
+  late Future<List<User>> _usersFuture;
+
   @override
   void initState() {
     super.initState();
-    _loadUsers();
+    _fetchUsers();
   }
 
-  Future<void> _loadUsers() async {
-    setState(() {
-      _isLoading = true;
-      _errorMessage = null;
-    });
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
 
-  try {
-    final users = await _apiService.getUsers();
+  void _fetchUsers() {
     setState(() {
-      _users = users;
-      _isLoading = false;
-    });
-  } catch (e) {
-    setState(() {
-      _errorMessage = e.toString();
-      _isLoading = false;
+      // CARA PANGGILAN NORMAL (Default 10 detik):
+      _usersFuture = _apiService.getUsers(timeout: const Duration(milliseconds: 1));
+
+      // UNTUK SCREENSHOT L5-b (Uji Timeout 1 Milidetik):
+      // Hilangkan tanda komen '//' di baris bawah ini untuk tes error timeout:
+      // _usersFuture = _apiService.getUsers(timeout: const Duration(milliseconds: 1));
     });
   }
-}
 
-@override
-Widget build(BuildContext context) {
-  return Scaffold(
-    appBar: AppBar(
-      title: const Text('Daftar Pengguna'),
-      backgroundColor: Colors.deepPurple,
-      foregroundColor: Colors.white,
-      actions: [
-        IconButton(
-          icon: const Icon(Icons.refresh),
-          onPressed: _loadUsers,
-          tooltip: 'Muat ulang',
-        ),
-      ],
-    ),
-    body: _buildBody(),
-  );
-}
+  // Getter Filtered Users untuk Latihan 4
+  List<User> _getFilteredUsers(List<User> users) {
+    final q = _query.toLowerCase();
+    if (q.isEmpty) return users;
+    return users
+        .where((u) =>
+            u.name.toLowerCase().contains(q) ||
+            u.email.toLowerCase().contains(q))
+        .toList();
+  }
 
-Widget _buildBody() {
- // Loading state
-  if (_isLoading) {
-    return const Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          CircularProgressIndicator(),
-          SizedBox(height: 16),
-          Text('Memuat data...'),
+  void _showUserDetail(User user) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(user.name),
+        content: Text('Email: ${user.email}'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Tutup'),
+          ),
         ],
       ),
     );
   }
 
- // Error state
-  if (_errorMessage != null) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24.0),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(
-              Icons.error_outline,
-              size: 64,
-              color: Colors.red,
-            ),
-            const SizedBox(height: 16),
-            const Text(
-              'Terjadi Kesalahan',
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Daftar Pengguna'),
+        backgroundColor: Colors.blue,
+        foregroundColor: Colors.white,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: _fetchUsers,
+          ),
+        ],
+      ),
+      body: FutureBuilder<List<User>>(
+        future: _usersFuture,
+        builder: (context, snapshot) {
+          // State 1: Loading
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          // State 2: Error (Tampilan Error Timeout / Error Lainnya)
+          if (snapshot.hasError) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(
+                      Icons.error_outline,
+                      color: Colors.red,
+                      size: 48,
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      '${snapshot.error}'.replaceAll('Exception: ', ''),
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(color: Colors.red),
+                    ),
+                    const SizedBox(height: 16),
+                    ElevatedButton(
+                      onPressed: _fetchUsers,
+                      child: const Text('Coba Lagi'),
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(height: 8),
-              Text(
-                _errorMessage!,
-                textAlign: TextAlign.center,
-                style: const TextStyle(color: Colors.grey),
+            );
+          }
+
+          // State 3: Sukses Data Diterima
+          final allUsers = snapshot.data ?? [];
+          final filteredUsers = _getFilteredUsers(allUsers);
+
+          return Column(
+            children: [
+              // Column Pencarian (Latihan 4)
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: TextField(
+                  controller: _searchController,
+                  decoration: InputDecoration(
+                    hintText: 'Cari nama atau email...',
+                    prefixIcon: const Icon(Icons.search),
+                    border: const OutlineInputBorder(),
+                    suffixIcon: _query.isEmpty
+                        ? null
+                        : IconButton(
+                            icon: const Icon(Icons.clear),
+                            onPressed: () {
+                              _searchController.clear();
+                              setState(() => _query = '');
+                            },
+                          ),
+                  ),
+                  onChanged: (v) => setState(() => _query = v),
+                ),
               ),
-              const SizedBox(height: 24),
-              ElevatedButton.icon(
-                onPressed: _loadUsers,
-                icon: const Icon(Icons.refresh),
-                label: const Text('Coba Lagi'),
+
+              // Output List atau Pesan Tidak Ditemukan
+              Expanded(
+                child: filteredUsers.isEmpty
+                    ? const Center(
+                        child: Text('Pengguna tidak ditemukan'),
+                      )
+                    : ListView.builder(
+                        itemCount: filteredUsers.length,
+                        itemBuilder: (context, i) {
+                          final user = filteredUsers[i];
+                          return Card(
+                            margin: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 4,
+                            ),
+                            child: ListTile(
+                              leading: CircleAvatar(
+                                child: Text(
+                                  user.name.isNotEmpty ? user.name[0] : '?',
+                                ),
+                              ),
+                              title: Text(user.name),
+                              subtitle: Text(user.email),
+                              onTap: () => _showUserDetail(user),
+                            ),
+                          );
+                        },
+                      ),
               ),
             ],
-          ),
-        ),
-      );
-    }
-
-    // Empty state
-    if (_users.isEmpty) {
-      return const Center(
-        child: Text('Tidak ada data pengguna'),
-      );
-    }
-
-    // Success state
-    return RefreshIndicator(
-      onRefresh: _loadUsers,
-      child: ListView.builder(
-        itemCount: _users.length,
-        itemBuilder: (context, index) {
-          final user = _users[index];
-          return UserCard(
-            user: user,
-            onTap: () {
-              _showUserDetail(user);
-            },
           );
         },
       ),
     );
   }
-
-  void _showUserDetail(User user) {
-    showModalBottomSheet(
-      context: context,
-      builder: (context) => Padding(
-        padding: const EdgeInsets.all(24.0),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              user.name,
-              style: const TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text('Username: ${user.username}'),
-              Text('Email: ${user.email}'),
-              Text('Telepon: ${user.phone}'),
-              Text('Website: ${user.website}'),
-              Text('Perusahaan: ${user.companyName}'),
-              const SizedBox(height: 16),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Tutup'),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 }
-
